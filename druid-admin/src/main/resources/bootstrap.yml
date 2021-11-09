@@ -7,7 +7,7 @@ spring:
     allow-bean-definition-overriding: true
   cloud:
     consul:
-      enabled: false
+      enabled: true
       host: localhost
       port: 8500
       discovery:
@@ -30,7 +30,7 @@ eureka:
     enabled: false
 
 monitor:
-  applications: #需要监控的服务名spring.application.name
+  applications: druid-demo2
   login-username: admin #监控页面的登录用户名和密码
   login-password: 123456
 

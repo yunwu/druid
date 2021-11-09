@@ -118,8 +118,11 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     private long                             poolingPeakTime           = 0;
     // store
     private volatile DruidConnectionHolder[] connections;
+    //池中connection数量
     private int                              poolingCount              = 0;
+    //活跃连接数
     private int                              activeCount               = 0;
+    //抛弃连接数
     private volatile long                    discardCount              = 0;
     private int                              notEmptyWaitThreadCount   = 0;
     private int                              notEmptyWaitThreadPeak    = 0;
@@ -141,6 +144,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     private volatile long                    createTaskIdSeed          = 1L;
     private long[]                           createTasks;
 
+    //TODO  应该是启动和关闭服务时都有并行操作，需要找到
     private final CountDownLatch             initedLatch               = new CountDownLatch(2);
 
     private volatile boolean                 enable                    = true;
@@ -148,6 +152,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     private boolean                          resetStatEnable           = true;
     private volatile long                    resetCount                = 0L;
 
+    //栈跟踪信息
     private String                           initStackTrace;
 
     private volatile boolean                 closing                   = false;
@@ -156,12 +161,16 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
     protected JdbcDataSourceStat             dataSourceStat;
 
+    //是否要使用全局监控？？？
     private boolean                          useGlobalDataSourceStat   = false;
     private boolean                          mbeanRegistered           = false;
     public static ThreadLocal<Long>          waitNanosLocal            = new ThreadLocal<Long>();
     private boolean                          logDifferentThread        = true;
+    //keepAlive 具体是指什么操作
     private volatile boolean                 keepAlive                 = false;
+    //TODO？？ 具体是指什么操作？？？
     private boolean                          asyncInit                 = false;
+    //当连接超时或失活，是否要kill掉，默认不处理
     protected boolean                        killWhenSocketReadTimeout = false;
     protected boolean                        checkExecuteTime          = false;
 
@@ -183,8 +192,10 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     }
 
     public DruidDataSource(boolean fairLock){
+        //创建锁， 根据fairLock决定是否创建公平锁，默认创建非公平所
         super(fairLock);
 
+        //初始化添加DataSource各种属性， 有些会有一些默认属性，如果同时配置了，则使用配置的值
         configFromPropety(System.getProperties());
     }
 
@@ -192,10 +203,14 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         return asyncInit;
     }
 
+
     public void setAsyncInit(boolean asyncInit) {
         this.asyncInit = asyncInit;
     }
 
+    /*
+    * 前缀spring.datasource 拼接
+    * */
     public void configFromPropety(Properties properties) {
         {
             String property = properties.getProperty("druid.name");
@@ -583,12 +598,20 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
                 LOG.info("{dataSource-" + this.getID() + "} restart");
             }
 
+            /**
+             * 清除操作：
+             * 后台线程中断，
+             * 异步任务取消，
+             * PreparedStatementHolder对象清除，
+             * 重新设置监控各种属性
+             */
             this.close();
             this.resetStat();
             this.inited = false;
             this.enable = true;
             this.closed = false;
 
+            //重新加载配置
             if (properties != null) {
                 configFromPropety(properties);
             }
@@ -597,6 +620,9 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         }
     }
 
+    /**
+     * 重置监控数据，设置为初始化数据
+     */
     public void resetStat() {
         if (!isResetStatEnable()) {
             return;
@@ -647,16 +673,23 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         return this.resetCount;
     }
 
+    /**
+     * 是否有可用连接
+     * @return
+     */
     public boolean isEnable() {
         return enable;
     }
 
+    //设置场景？？？？
     public void setEnable(boolean enable) {
         lock.lock();
         try {
             this.enable = enable;
             if (!enable) {
+                //通知线程已经满了，需等待
                 notEmpty.signalAll();
+                //等待队列
                 notEmptySignalCount++;
             }
         } finally {
@@ -916,12 +949,13 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
             SQLException connectError = null;
 
+            //异步创建connection，
             if (createScheduler != null && asyncInit) {
                 for (int i = 0; i < initialSize; ++i) {
                     submitCreateTask(true);
                 }
             } else if (!asyncInit) {
-                // init connections
+                // init connections ，同步创建
                 while (poolingCount < initialSize) {
                     try {
                         PhysicalConnectionInfo pyConnectInfo = createPhysicalConnection();
@@ -945,6 +979,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
             }
 
             createAndLogThread();
+            //TODO 下面这两个线程的作用是啥需要再看看
             createAndStartCreatorThread();
             createAndStartDestroyThread();
 
@@ -952,6 +987,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
             init = true;
 
             initedTime = new Date();
+            //注册bean到监控
             registerMbean();
 
             if (connectError != null && poolingCount == 0) {
@@ -2580,6 +2616,13 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         return true;
     }
 
+    /**
+     * 创建连接任务（包含重建连接）-主要步骤：
+     * 1。申请taskID
+     * 2。检查服务现状，如果关闭或是正在关闭，则清理任务并return
+     * 3.检查是否有等待线程，如果没有等待线程， 需要做重建之前的预检查（具体参数有点模糊，暂时先不处理）
+     * 4。开始创建物理连接
+     */
     public class CreateConnectionTask implements Runnable {
 
         private int errorCount   = 0;
@@ -2611,6 +2654,9 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
                         return;
                     }
 
+                    /**
+                     * emptyWait ：无等待线程
+                     */
                     boolean emptyWait = true;
 
                     if (createError != null && poolingCount == 0) {
@@ -2619,6 +2665,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
                     if (emptyWait) {
                         // 必须存在线程等待，才创建连接
+                        //TODO ？？活跃的线程是否记录在池中线程数中？？？
                         if (poolingCount >= notEmptyWaitThreadCount //
                                 && (!(keepAlive && activeCount + poolingCount < minIdle)) // 在keepAlive场景不能放弃创建
                                 && (!initTask) // 线程池初始化时的任务不能放弃创建
@@ -2766,6 +2813,10 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         }
     }
 
+    /**
+     * 后台线程，创建connection的thread， 主要步骤和上面task一致，都是创建物理连接
+     * 后续处理逻辑不同，创建出来的connection是放在holder中，由此看来这个主要用于启动时新建，而上面很可能是进行链接的重建工作，
+     */
     public class CreateConnectionThread extends Thread {
 
         public CreateConnectionThread(String name){

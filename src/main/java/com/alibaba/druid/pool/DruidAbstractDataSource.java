@@ -103,7 +103,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected volatile String                          defaultCatalog                            = null;
 
     protected String                                   name;
-
+    /******************************* datasource配置项 **************************************************/
     protected volatile String                          username;
     protected volatile String                          password;
     protected volatile String                          jdbcUrl;
@@ -114,6 +114,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected volatile PasswordCallback                passwordCallback;
     protected volatile NameCallback                    userCallback;
 
+    //默认初始化连接数8，
     protected volatile int                             initialSize                               = DEFAULT_INITIAL_SIZE;
     protected volatile int                             maxActive                                 = DEFAULT_MAX_ACTIVE_SIZE;
     protected volatile int                             minIdle                                   = DEFAULT_MIN_IDLE;
@@ -129,6 +130,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected volatile boolean                         poolPreparedStatements                    = false;
     protected volatile boolean                         sharePreparedStatements                   = false;
     protected volatile int                             maxPoolPreparedStatementPerConnectionSize = 10;
+    /************************************* datasource配置项 ***********************************************************/
 
     protected volatile boolean                         inited                                    = false;
     protected volatile boolean                         initExceptionThrow                        = true;
@@ -240,6 +242,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected boolean                                  useOracleImplicitCache                    = true;
 
     protected ReentrantLock                            lock;
+    //not
     protected Condition                                notEmpty;
     protected Condition                                empty;
 
@@ -1720,6 +1723,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
         createStartNanosUpdater.set(this, connectStartNanos);
         creatingCountUpdater.incrementAndGet(this);
         try {
+            //创建真正的物理连接，如果开启filter，则单独处理
             conn = createPhysicalConnection(url, physicalConnectProperties);
             connectedNanos = System.nanoTime();
 
@@ -1727,9 +1731,12 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
                 throw new SQLException("connect error, url " + url + ", driverClass " + this.driverClass);
             }
 
+            //创建物理连接之后进行一些后续操作，
             initPhysicalConnection(conn, variables, globalVariables);
             initedNanos = System.nanoTime();
 
+            //交验connection，通过设置的校验SQL进行检查连接是否active
+            //TODO 记录各种时间，参数 比如开始连接时间，校验时间等， 为了统计？
             validateConnection(conn);
             validatedNanos = System.nanoTime();
 
@@ -1815,6 +1822,14 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
         initPhysicalConnection(conn, null, null);
     }
 
+
+    /**
+     * 设置参数：connection自动提交属性， 只读属性，事物， mydql数据库便来给你变量
+     * @param conn
+     * @param variables
+     * @param globalVariables
+     * @throws SQLException
+     */
     public void initPhysicalConnection(Connection conn, Map<String, Object> variables, Map<String, Object> globalVariables) throws SQLException {
         if (conn.getAutoCommit() != defaultAutoCommit) {
             conn.setAutoCommit(defaultAutoCommit);
@@ -1856,6 +1871,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
             }
 
             DbType dbType = DbType.of(this.dbTypeName);
+            //如果是mysql， 将变量写入内存
             if (dbType == DbType.mysql || dbType == DbType.ads) {
                 if (variables != null) {
                     ResultSet rs = null;

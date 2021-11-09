@@ -16,6 +16,9 @@
 package com.alibaba.druid;
 
 public interface Constants {
+    /**
+     * 这两个配置和监控有关，文档没有具体描述，后续再看 TODO
+     */
 
     public final static String DRUID_STAT_SQL_MAX_SIZE             = "druid.stat.sql.MaxSize";
 
