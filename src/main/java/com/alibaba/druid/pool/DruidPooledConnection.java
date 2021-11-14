@@ -845,6 +845,7 @@ public class DruidPooledConnection extends PoolableWrapper implements javax.sql.
         } catch (SQLException ex) {
             handleException(ex, null);
         } finally {
+            //druid自己做的监控记录
             handleEndTransaction(dataSource, savepoint);
         }
     }

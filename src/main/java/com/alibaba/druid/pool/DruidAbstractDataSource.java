@@ -75,6 +75,7 @@ import com.alibaba.druid.util.Utils;
 /**
  * @author wenshao [szujobs@hotmail.com]
  * @author ljw [ljw2083@alibaba-inc.com]
+ * 主要实现了DruidAbstractDataSourceMBean与DataSourceProxy，唯独没有实现dataSource 接口，需要确认一下原因
  */
 public abstract class DruidAbstractDataSource extends WrapperAdapter implements DruidAbstractDataSourceMBean, DataSource, DataSourceProxy, Serializable {
     private static final long                          serialVersionUID                          = 1L;
@@ -132,6 +133,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected volatile int                             maxPoolPreparedStatementPerConnectionSize = 10;
     /************************************* datasource配置项 ***********************************************************/
 
+    //一个服务实例只有一个datasource对象，通过inited参数判断该参数是否已经初始化完成
     protected volatile boolean                         inited                                    = false;
     protected volatile boolean                         initExceptionThrow                        = true;
 
@@ -148,6 +150,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
 
     protected long                                     createTimespan;
 
+    //最大等待线程数
     protected volatile int                             maxWaitThreadCount                        = -1;
     protected volatile boolean                         accessToUnderlyingConnectionAllowed       = true;
 
@@ -237,6 +240,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected volatile long                            lastCreateErrorTimeMillis;
     protected volatile long                            lastCreateStartTimeMillis;
 
+    //特定参数， oracle与mysql单独处理
     protected boolean                                  isOracle                                  = false;
     protected boolean                                  isMySql                                   = false;
     protected boolean                                  useOracleImplicitCache                    = true;
@@ -273,6 +277,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected boolean                                  failFast                                  = false;
     protected volatile int                             failContinuous                            = 0;
     protected volatile long                            failContinuousTimeMillis                  = 0L;
+    //定时任务线程池
     protected ScheduledExecutorService                 destroyScheduler;
     protected ScheduledExecutorService                 createScheduler;
 
@@ -304,6 +309,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
         this.useLocalSessionState = useLocalSessionState;
     }
 
+    //监控日志
     public DruidDataSourceStatLogger getStatLogger() {
         return statLogger;
     }
@@ -1609,6 +1615,7 @@ public abstract class DruidAbstractDataSource extends WrapperAdapter implements 
     protected volatile long transactionIdSeed = 60000L;
     protected volatile long metaDataIdSeed    = 80000L;
 
+    //TODO 认一下是否为了保证单机并发处理安全
     final static AtomicLongFieldUpdater<DruidAbstractDataSource> connectionIdSeedUpdater  = AtomicLongFieldUpdater.newUpdater(DruidAbstractDataSource.class, "connectionIdSeed");
     final static AtomicLongFieldUpdater<DruidAbstractDataSource> statementIdSeedUpdater   = AtomicLongFieldUpdater.newUpdater(DruidAbstractDataSource.class, "statementIdSeed");
     final static AtomicLongFieldUpdater<DruidAbstractDataSource> resultSetIdSeedUpdater   = AtomicLongFieldUpdater.newUpdater(DruidAbstractDataSource.class, "resultSetIdSeed");

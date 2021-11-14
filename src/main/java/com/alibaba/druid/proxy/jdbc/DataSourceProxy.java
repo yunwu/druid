@@ -27,6 +27,7 @@ import com.alibaba.druid.stat.JdbcDataSourceStat;
  */
 public interface DataSourceProxy {
 
+    //操作数据库的一些方法
     JdbcDataSourceStat getDataSourceStat();
 
     String getName();

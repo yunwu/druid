@@ -27,7 +27,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * @author lihengming [89921218@qq.com]
- */
+ * 融入spring-boot， 利用springboot SPI模式，在启动时加载DruidDataSource并纳入容器统一管理
+ * 通过spring兼自动加载的DataSourceProperties， 设置userName， password， URL，
+ * 兼容spring.datasource.user, spring.datasource.password, spring.datasource.url:
+ * * */
 @ConfigurationProperties("spring.datasource.druid")
 public class DruidDataSourceWrapper extends DruidDataSource implements InitializingBean {
     @Autowired

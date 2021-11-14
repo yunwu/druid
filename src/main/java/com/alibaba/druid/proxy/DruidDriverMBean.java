@@ -17,6 +17,7 @@ package com.alibaba.druid.proxy;
 
 /**
  * @author wenshao [szujobs@hotmail.com]
+ * 是否是实现一些监控Driver数据获取
  */
 public interface DruidDriverMBean {
     String getDruidVersion();

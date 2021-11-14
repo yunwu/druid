@@ -20,6 +20,7 @@ import java.util.List;
 
 public interface DruidAbstractDataSourceMBean {
 
+    //自定义参数
     int getLoginTimeout();
 
     String getDbType();

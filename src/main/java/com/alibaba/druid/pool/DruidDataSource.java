@@ -96,12 +96,13 @@ import com.alibaba.druid.wall.WallProviderStatValue;
 /**
  * @author ljw [ljw2083@alibaba-inc.com]
  * @author wenshao [szujobs@hotmail.com]
+ * 主要实现
  */
 public class DruidDataSource extends DruidAbstractDataSource implements DruidDataSourceMBean, ManagedDataSource, Referenceable, Closeable, Cloneable, ConnectionPoolDataSource, MBeanRegistration {
 
     private final static Log                 LOG                       = LogFactory.getLog(DruidDataSource.class);
     private static final long                serialVersionUID          = 1L;
-    // stats
+    // stats 监控连接池的参数，主要监控连接池
     private volatile long                    recycleErrorCount         = 0L;
     private long                             connectCount              = 0L;
     private long                             closeCount                = 0L;
@@ -116,7 +117,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     private long                             activePeakTime            = 0;
     private int                              poolingPeak               = 0;
     private long                             poolingPeakTime           = 0;
-    // store
+    // store 存的是 DruidPooledConnection
     private volatile DruidConnectionHolder[] connections;
     //池中connection数量
     private int                              poolingCount              = 0;
@@ -126,7 +127,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     private volatile long                    discardCount              = 0;
     private int                              notEmptyWaitThreadCount   = 0;
     private int                              notEmptyWaitThreadPeak    = 0;
-    //
+    //这两个池子是干嘛的？？TODO
     private DruidConnectionHolder[]          evictConnections;
     private DruidConnectionHolder[]          keepAliveConnections;
 
@@ -144,9 +145,10 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     private volatile long                    createTaskIdSeed          = 1L;
     private long[]                           createTasks;
 
-    //TODO  应该是启动和关闭服务时都有并行操作，需要找到
+    //在初始化的时候开启两个线程， 线程1： createConnectionThread, 线程2： destroyTask
     private final CountDownLatch             initedLatch               = new CountDownLatch(2);
 
+    //应该是和监控有关的一个参数， 可能是个开关，确认一下
     private volatile boolean                 enable                    = true;
 
     private boolean                          resetStatEnable           = true;
@@ -196,6 +198,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         super(fairLock);
 
         //初始化添加DataSource各种属性， 有些会有一些默认属性，如果同时配置了，则使用配置的值
+        //这里是从系统变量中获取，从方法中可以看出可以将数据库连接设置到启动时的启动参数
         configFromPropety(System.getProperties());
     }
 
@@ -208,9 +211,6 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         this.asyncInit = asyncInit;
     }
 
-    /*
-    * 前缀spring.datasource 拼接
-    * */
     public void configFromPropety(Properties properties) {
         {
             String property = properties.getProperty("druid.name");
@@ -830,16 +830,25 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         this.connectProperties = properties;
     }
 
+    /**
+     * datasource
+     * 1：最主要的功能是1。初始化lock，2。加载我们在配置文件中配置的参数
+     * 2。 在使用datasource 前，使用init方法初始化datasource各种参数
+     * @throws SQLException
+     */
     public void init() throws SQLException {
         if (inited) {
             return;
         }
 
         // bug fixed for dead lock, for issue #2980
+        //DruidDriver  Datasource初始化的时候已经实例话对象，每次获取都是
+        //感觉这句话没用，需要验证 TODO
         DruidDriver.getInstance();
 
         final ReentrantLock lock = this.lock;
         try {
+            //加锁，防中断
             lock.lockInterruptibly();
         } catch (InterruptedException e) {
             throw new SQLException("interrupt", e);
@@ -847,13 +856,16 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
         boolean init = false;
         try {
+            //双重校验，在解锁之前校验，防止重复操作init
             if (inited) {
                 return;
             }
 
             initStackTrace = Utils.toString(Thread.currentThread().getStackTrace());
 
+            //创建一个原子数来作为datasourceID
             this.id = DruidDriver.createDataSourceId();
+            //为什么会有 > 1 的情况，> 1说明已经操作过了，确认一下场景 TODO
             if (this.id > 1) {
                 long delta = (this.id - 1) * 100000;
                 this.connectionIdSeedUpdater.addAndGet(this, delta);
@@ -864,9 +876,13 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
             if (this.jdbcUrl != null) {
                 this.jdbcUrl = this.jdbcUrl.trim();
+                //url 有两种模式，一种是我们常见的连接数据库URL： 例如： jdbc:h2:file:./demo-db
+                //第二种解析模式： jdbc:wrap-jdbc:driver={driver}:user={user}:jxm={jmx}
                 initFromWrapDriverUrl();
             }
 
+            //在执行init方法之前加载filter
+            //需要看一下filtermanager 和filterchain
             for (Filter filter : filters) {
                 filter.init(this);
             }
@@ -875,6 +891,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
                 this.dbTypeName = JdbcUtils.getDbType(jdbcUrl, null);
             }
 
+            // 特定数据库设置： 缓存server配置
             DbType dbType = DbType.of(this.dbTypeName);
             if (dbType == DbType.mysql
                     || dbType == DbType.mariadb
@@ -891,6 +908,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
                 }
             }
 
+            /************************** 参数校验 ********************************/
             if (maxActive <= 0) {
                 throw new IllegalArgumentException("illegal maxActive " + maxActive);
             }
@@ -915,20 +933,26 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
                 throw new SQLException("keepAliveBetweenTimeMillis must be grater than timeBetweenEvictionRunsMillis");
             }
 
+            /************************** 参数校验 ********************************/
+
             if (this.driverClass != null) {
                 this.driverClass = driverClass.trim();
             }
 
+
+            //加载自定义的filter 自定义filter 需要在 resource/service目录下创建文件，利用的JDK原生的SPI机制
             initFromSPIServiceLoader();
 
             resolveDriver();
-
+            //特殊处理了oracle, db2, nysql
             initCheck();
 
             initExceptionSorter();
+            //不同的数据库检测方案不一致， mysql使用ping, oracle 使用execute 查询
             initValidConnectionChecker();
             validationQueryCheck();
 
+            //监控相关处理
             if (isUseGlobalDataSourceStat()) {
                 dataSourceStat = JdbcDataSourceStat.getGlobal();
                 if (dataSourceStat == null) {
@@ -979,8 +1003,10 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
             }
 
             createAndLogThread();
-            //TODO 下面这两个线程的作用是啥需要再看看
+            //下面两个线程的initLatch.countdown 时机： 只有真正创建出createConnectionThread，destroyTask ,
+            // 或是这两个thread第一次run的时候，才会down, 所以这里其实在暗示init要完成必须等待这两个创建完成
             createAndStartCreatorThread();
+            //destroy： 定时清理失效链接
             createAndStartDestroyThread();
 
             initedLatch.await();
@@ -1137,7 +1163,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
     /**
      * load filters from SPI ServiceLoader
-     * 
+     * 扩展 自定义filter
      * @see ServiceLoader
      */
     private void initFromSPIServiceLoader() {
@@ -1180,7 +1206,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         if (this.name == null) {
             this.name = config.getName();
         }
-
+        //给每个datasource 添加配置的filter，并做去重操作
         for (Filter filter : config.getFilters()) {
             addFilter(filter);
         }
@@ -1434,12 +1460,15 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     }
 
     public DruidPooledConnection getConnection(long maxWaitMillis) throws SQLException {
+        //在获取connection时先去init datasource
         init();
 
+        //如果自定了filter，则走filter chain
         if (filters.size() > 0) {
             FilterChainImpl filterChain = new FilterChainImpl(this);
             return filterChain.dataSource_connect(this, maxWaitMillis);
         } else {
+            //如果没有自定义，直接区获取
             return getConnectionDirect(maxWaitMillis);
         }
     }
@@ -1460,6 +1489,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
             // handle notFullTimeoutRetry
             DruidPooledConnection poolableConnection;
             try {
+                //获取connection
                 poolableConnection = getConnectionInternal(maxWaitMillis);
             } catch (GetConnectionTimeoutException ex) {
                 if (notFullTimeoutRetryCnt <= this.notFullTimeoutRetryCount && !isFull()) {
@@ -1627,6 +1657,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
         for (boolean createDirect = false;;) {
             if (createDirect) {
+                //TODO 暂时没看清楚什么时候执行这个逻辑
                 createStartNanosUpdater.set(this, System.nanoTime());
                 if (creatingCountUpdater.compareAndSet(this, 0, 1)) {
                     PhysicalConnectionInfo pyConnInfo = DruidDataSource.this.createPhysicalConnection();
@@ -1665,6 +1696,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
             }
 
             try {
+                //防止死锁
                 lock.lockInterruptibly();
             } catch (InterruptedException e) {
                 connectErrorCountUpdater.incrementAndGet(this);
@@ -1708,6 +1740,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
 
                 connectCount++;
 
+                //第一次获取链接处理
                 if (createScheduler != null
                         && poolingCount == 0
                         && activeCount < maxActive
@@ -1720,12 +1753,14 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
                     }
                 }
 
+                //有等待和没有等待有啥区别？？？
                 if (maxWait > 0) {
                     holder = pollLast(nanos);
                 } else {
                     holder = takeLast();
                 }
 
+                //判断holder 是否被丢弃
                 if (holder != null) {
                     if (holder.discard) {
                         continue;
@@ -2240,6 +2275,7 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
     DruidConnectionHolder takeLast() throws InterruptedException, SQLException {
         try {
             while (poolingCount == 0) {
+                //如果池中数据创建线程，自由有线程等待才会创建线程
                 emptySignal(); // send signal to CreateThread create connection
 
                 if (failFast && isFailContinuous()) {
@@ -3950,6 +3986,13 @@ public class DruidDataSource extends DruidAbstractDataSource implements DruidDat
         submitCreateTask(false);
     }
 
+    /**
+     * 只实现了MBeanRegistration接口中的方法preRegister，有啥作用？TODO
+     * @param server
+     * @param name
+     * @return
+     * @throws Exception
+     */
     @Override
     public ObjectName preRegister(MBeanServer server, ObjectName name) throws Exception {
         if (server != null) {

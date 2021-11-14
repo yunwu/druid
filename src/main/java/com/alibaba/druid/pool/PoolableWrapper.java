@@ -22,6 +22,7 @@ import com.alibaba.druid.proxy.jdbc.WrapperProxy;
 
 /**
  * @author wenshao [szujobs@hotmail.com]
+ * //为什么做一个包装器，是为了通用吗？
  */
 public class PoolableWrapper implements Wrapper {
 

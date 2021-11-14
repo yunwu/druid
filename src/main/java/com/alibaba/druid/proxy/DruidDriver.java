@@ -60,6 +60,7 @@ public class DruidDriver implements Driver, DruidDriverMBean {
     private final static AtomicInteger                              dataSourceIdSeed         = new AtomicInteger(0);
     private final static AtomicInteger                              sqlStatIdSeed            = new AtomicInteger(0);
 
+    //针对这种URL有特定处理，但是感觉没有必要 TODO
     public final static String                                      DEFAULT_PREFIX           = "jdbc:wrap-jdbc:";
     public final static String                                      DRIVER_PREFIX            = "driver=";
     public final static String                                      PASSWORD_CALLBACK_PREFIX = "passwordCallback=";

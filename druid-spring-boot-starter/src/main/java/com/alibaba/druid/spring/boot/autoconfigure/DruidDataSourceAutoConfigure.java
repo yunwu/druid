@@ -46,6 +46,12 @@ import org.springframework.context.annotation.Import;
     DruidStatViewServletConfiguration.class,
     DruidWebStatFilterConfiguration.class,
     DruidFilterConfiguration.class})
+
+
+/**
+ * 利用spring SPI 模式，在初始化的时候构造
+ * 在加载datasource之前，先加载filter
+ */
 public class DruidDataSourceAutoConfigure {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DruidDataSourceAutoConfigure.class);
